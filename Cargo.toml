@@ -1,0 +1,36 @@
+[package]
+name = "syosetu-dump"
+version = "1.0.0"
+authors = ["Douman <douman@gmx.se>"]
+description = "syosetu dump tool"
+license = "BSL-1.0"
+edition = "2018"
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "README.md"
+]
+keywords = ["syosetu"]
+
+repository = "https://github.com/DoumanAsh/syosetu"
+documentation = "https://docs.rs/syosetu"
+
+readme = "README.md"
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+
+[dependencies.ureq]
+version = "1"
+default-features = false
+features = ["tls", "json"]
+
+[dependencies.str-buf]
+version = "1"
+features = ["serde"]
+
+[dependencies]
+kuchiki = "0.8"
+arg = "0.3"
+c-ffi = "0.4"

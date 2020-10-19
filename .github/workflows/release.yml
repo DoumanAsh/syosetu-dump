@@ -1,0 +1,81 @@
+name: Rust
+
+on:
+  release:
+    types:
+      - created
+
+jobs:
+  build:
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Install Rust Unix
+      if: runner.os != 'Windows'
+      run: |
+        if rustup --version >/dev/null 2>&1; then
+            rustup update
+        else
+             curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+             echo ::add-path::$HOME/.cargo/bin
+        fi
+    - name: Install Rust Windows
+      if: runner.os == 'Windows'
+      run: |
+        if (Get-Command "rustup" -ErrorAction SilentlyContinue) {
+            rustup update
+        } else {
+            Invoke-WebRequest https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe -OutFile rustup-init.exe
+            ./rustup-init.exe -y --profile minimal --default-toolchain stable
+            echo ::add-path::%USERPROFILE%\.cargo\bin
+        }
+
+    - name: Rust version
+      run: |
+        cargo --version
+        rustc --version
+
+    - name: Build release Win
+      if: runner.os == 'Windows'
+      run: cargo build --release
+
+    - name: Build release Unix
+      if: runner.os != 'Windows'
+      run: cargo build --release
+      env:
+        RUSTFLAGS: '-C link-arg=-s'
+
+    - name: Pack Unix
+      if: runner.os != 'Windows'
+      run: zip -j syosetu-dump-${{runner.os}}.zip target/release/syosetu-dump
+
+    - name: Pack Windows
+      if: runner.os == 'Windows'
+      run: Compress-Archive -Path target/release/syosetu-dump.exe -Destination syosetu-dump-${{runner.os}}.zip
+
+    - name: Upload to release Unix
+      if: runner.os != 'Windows'
+      run: |
+        curl \
+          -f \
+          -sSL \
+          -XPOST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: application/zip" \
+          --upload-file "syosetu-dump-${{runner.os}}.zip" \
+          "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)/assets?name=syosetu-dump-${{runner.os}}.zip"
+
+    - name: Upload to release Windows
+      if: runner.os == 'Windows'
+      run: |
+        $headers = @{"Authorization"="token ${{ secrets.GITHUB_TOKEN }}" };
+        $event = Get-Content -Raw -Path $env:GITHUB_EVENT_PATH | ConvertFrom-Json;
+        $url = "https://uploads.github.com/repos/$($env:GITHUB_REPOSITORY)/releases/$($event.release.id)/assets?name=syosetu-dump-${{runner.os}}.zip";
+        Invoke-WebRequest -Headers $headers -Method POST -Infile syosetu-dump-${{runner.os}}.zip -ContentType 'application/zip' -Uri $url
