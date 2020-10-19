@@ -34,3 +34,8 @@ features = ["serde"]
 kuchiki = "0.8"
 arg = "0.3"
 c-ffi = "0.4"
+
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
