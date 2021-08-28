@@ -8,11 +8,9 @@ mod data;
 c_ffi::c_main!(rust_main);
 
 #[inline(always)]
-fn get(path: &str) -> ureq::Response {
-    ureq::get(path)
-        .timeout_connect(5_000)
-        .timeout_read(5_000)
-        .call()
+fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
+    ureq::get(path).timeout(core::time::Duration::from_secs(5))
+                   .call()
 }
 
 fn rust_main(args: c_ffi::Args) -> bool {
@@ -21,13 +19,24 @@ fn rust_main(args: c_ffi::Args) -> bool {
         Err(code) => return code,
     };
 
-    let resp = get(&format!("https://api.syosetu.com/novelapi/api/?out=json&ncode={}", args.novel.0));
-    if resp.status() != 200 {
-        eprintln!("Request to api.syosetu.com failed with code: {}", resp.status());
-        return false;
-    }
+    let resp = match get(&format!("https://api.syosetu.com/novelapi/api/?out=json&ncode={}", args.novel.0)) {
+        Ok(resp) => if resp.status() != 200 {
+            eprintln!("Request to api.syosetu.com failed with code: {}", resp.status());
+            return false;
+        } else {
+            resp
+        },
+        Err(ureq::Error::Status(code, _)) => {
+            eprintln!("Request to api.syosetu.com failed with code: {}", code);
+            return false;
+        },
+        Err(ureq::Error::Transport(_)) => {
+            eprintln!("api.syosetu.com is unreachable");
+            return false
+        },
+    };
 
-    let (_, info) = match resp.into_json_deserialize::<data::NovelInfo>() {
+    let (_, info) = match resp.into_json::<data::NovelInfo>() {
         Ok(info) => info,
         Err(error) => {
             eprintln!("Failed to get novel '{}' info. Error: {}", args.novel.0, error);
@@ -77,18 +86,30 @@ fn rust_main(args: c_ffi::Args) -> bool {
     for idx in args.from.get()..=to {
         print!("Downloading chapter {}...", idx);
         let text = loop {
-            let resp = get(&format!("https://ncode.syosetu.com/{}/{}", info.ncode, idx));
+            let resp = match get(&format!("https://ncode.syosetu.com/{}/{}", info.ncode, idx)) {
+                Ok(resp) => if resp.status() != 200 {
+                    println!("ERR");
+                    eprintln!("Request to ncode.syosetu.com failed with code: {}", resp.status());
+                    continue
+                } else {
+                    resp
+                },
+                Err(ureq::Error::Status(code, _)) => {
+                    println!("ERR");
+                    eprintln!("Request to ncode.syosetu.com failed with code: {}", code);
+                    continue
+                },
+                Err(ureq::Error::Transport(_)) => {
+                    eprintln!("ncode.syosetu.com is unreachable");
+                    continue
+                },
+            };
 
-            if resp.status() != 200 {
-                println!("ERR");
-                eprintln!("Request to api.syosetu.com failed with code: {}", resp.status());
-            } else {
-                match resp.into_string() {
-                    Ok(text) => break text,
-                    Err(error) => {
-                        println!("ERR");
-                        eprintln!("Unable to get content of chapter: {}", error);
-                    }
+            match resp.into_string() {
+                Ok(text) => break text,
+                Err(error) => {
+                    println!("ERR");
+                    eprintln!("Unable to get content of chapter: {}", error);
                 }
             }
         };

@@ -1,6 +1,6 @@
 [package]
 name = "syosetu-dump"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Douman <douman@gmx.se>"]
 description = "syosetu dump tool"
 license = "BSL-1.0"
@@ -22,18 +22,18 @@ version = "1"
 features = ["derive"]
 
 [dependencies.ureq]
-version = "1"
+version = "2.2"
 default-features = false
 features = ["tls", "json"]
 
 [dependencies.str-buf]
-version = "1"
+version = "2"
 features = ["serde"]
 
 [dependencies]
 kuchiki = "0.8"
 arg = "0.3"
-c-ffi = "0.4"
+c-ffi = "0.4.6"
 
 [profile.release]
 lto = true

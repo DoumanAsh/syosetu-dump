@@ -1,6 +1,6 @@
 use serde::{Deserialize};
 
-pub type IdBuf = str_buf::StrBuf<[u8; 10]>;
+pub type IdBuf = str_buf::StrBuf<10>;
 
 #[derive(Debug, Deserialize)]
 pub struct Meta {
@@ -16,7 +16,7 @@ pub struct Info {
     #[serde(rename = "general_all_no")]
     pub chapter_count: usize,
     #[serde(rename = "novelupdated_at")]
-    pub updated_at: str_buf::StrBuf<[u8;19]>,
+    pub updated_at: str_buf::StrBuf<19>,
 }
 
 pub type NovelInfo = (Meta, Info);
