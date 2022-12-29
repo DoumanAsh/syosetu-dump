@@ -9,7 +9,9 @@ c_ffi::c_main!(rust_main);
 
 #[inline(always)]
 fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
+    //over18=yes;
     ureq::get(path).timeout(core::time::Duration::from_secs(5))
+                   .set("Cookie", "over18=yes")
                    .call()
 }
 
@@ -19,7 +21,12 @@ fn rust_main(args: c_ffi::Args) -> bool {
         Err(code) => return code,
     };
 
-    let resp = match get(&format!("https://api.syosetu.com/novelapi/api/?out=json&ncode={}", args.novel.0)) {
+    let api_endpoint = match args.r18 {
+        true => "novel18api",
+        false => "novelapi",
+    };
+
+    let resp = match get(&format!("https://api.syosetu.com/{api_endpoint}/api/?out=json&ncode={}", args.novel.0)) {
         Ok(resp) => if resp.status() != 200 {
             eprintln!("Request to api.syosetu.com failed with code: {}", resp.status());
             return false;

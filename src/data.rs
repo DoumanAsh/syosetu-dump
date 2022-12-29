@@ -4,6 +4,7 @@ pub type IdBuf = str_buf::StrBuf<10>;
 
 #[derive(Debug, Deserialize)]
 pub struct Meta {
+    #[allow(unused)]
     #[serde(rename = "allcount")]
     count: usize
 }

@@ -38,6 +38,9 @@ pub struct Cli {
     ///Specify from which chapter to start dumping. Default: 1.
     pub from: NonZeroUsize,
     #[arg(long)]
+    ///Specify whether to access 18+ novel
+    pub r18: bool,
+    #[arg(long)]
     ///Specify until which chapter to dump.
     pub to: Option<NonZeroUsize>,
     #[arg(required)]
