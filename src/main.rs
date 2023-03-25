@@ -1,11 +1,10 @@
 #![no_main]
+#![allow(clippy::result_large_err)]
 
 use std::{io, fs, path};
 
 mod cli;
 mod data;
-
-c_ffi::c_main!(rust_main);
 
 #[inline(always)]
 fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
@@ -15,7 +14,8 @@ fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
                    .call()
 }
 
-fn rust_main(args: c_ffi::Args) -> bool {
+#[no_mangle]
+fn rust_main(args: c_main::Args) -> bool {
     let args = match cli::Cli::new(args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(code) => return code,

@@ -32,8 +32,8 @@ features = ["serde"]
 
 [dependencies]
 kuchiki = "0.8"
-arg = "0.3"
-c-ffi = "0.4.6"
+arg = "0.4"
+c-main = "1"
 
 [profile.release]
 lto = true
