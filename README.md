@@ -20,3 +20,11 @@ OPTIONS:
 ARGS:
     <novel>  Id of the novel to dump (e.g. n9185fm)
 ```
+
+## Convert to EPUB
+
+I recommend to use [pandoc](https://github.com/jgm/pandoc):
+
+```
+pandoc --embed-resources --standalone --metadata title="TITLE" -o TITLE.epub TITLE.md
+```
