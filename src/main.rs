@@ -44,7 +44,10 @@ fn rust_main(args: c_main::Args) -> bool {
     };
 
     let (_, info) = match resp.into_json::<data::NovelInfo>() {
-        Ok(info) => info,
+        Ok(mut info) => {
+            info.1.ncode.make_ascii_lowercase();
+            info
+        }
         Err(error) => {
             eprintln!("Failed to get novel '{}' info. Error: {}", args.novel.0, error);
             return false
@@ -91,7 +94,7 @@ fn rust_main(args: c_main::Args) -> bool {
     }
 
     for idx in args.from.get()..=to {
-        print!("Downloading chapter {}...", idx);
+        print!("Downloading chapter {} ({}/{})...", idx, info.ncode, idx);
         let text = loop {
             let resp = match get(&format!("https://ncode.syosetu.com/{}/{}", info.ncode, idx)) {
                 Ok(resp) => if resp.status() != 200 {
@@ -174,6 +177,12 @@ fn dump<W: io::Write>(dest: &mut W, html: &str) -> io::Result<()> {
 
             if !text.is_empty() {
                 dest.write_all(text.as_bytes())?;
+            } else if let Ok(img) = element.as_node().select_first("img") {
+                let img = img.attributes.borrow();
+                if let Some(src) = img.get("src") {
+                    let alt = img.get("alt").unwrap_or("");
+                    dest.write_fmt(format_args!("![{alt}]({src})"))?;
+                }
             }
         }
     }
