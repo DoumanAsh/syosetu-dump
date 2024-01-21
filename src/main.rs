@@ -93,6 +93,7 @@ fn rust_main(args: c_main::Args) -> bool {
         return false;
     }
 
+    let http_client = ureq::AgentBuilder::new().redirects(0).build();
     for idx in args.from.get()..=to {
         print!("Downloading chapter {} ({}/{})...", idx, info.ncode, idx);
         let text = loop {
@@ -124,7 +125,7 @@ fn rust_main(args: c_main::Args) -> bool {
             }
         };
 
-        if let Err(error) = dump(&mut file, &text) {
+        if let Err(error) = dump(&mut file, &text, &http_client) {
             println!("ERR");
             eprintln!("Failed to store novel. Error: {}", error);
             return false;
@@ -146,7 +147,7 @@ fn construct_file_path(dir: &str, name: &str) -> path::PathBuf {
     path
 }
 
-fn dump<W: io::Write>(dest: &mut W, html: &str) -> io::Result<()> {
+fn dump<W: io::Write>(dest: &mut W, html: &str, http_client: &ureq::Agent) -> io::Result<()> {
     use kuchiki::traits::TendrilSink;
 
     const WHITE_SPACE: &[char] = &[' ', '\t', '\n', '　'];
@@ -180,6 +181,22 @@ fn dump<W: io::Write>(dest: &mut W, html: &str) -> io::Result<()> {
             } else if let Ok(img) = element.as_node().select_first("img") {
                 let img = img.attributes.borrow();
                 if let Some(src) = img.get("src") {
+                    let src = if src.starts_with("http") {
+                        src.to_owned()
+                    } else {
+                        format!("https://{}", src.trim_start_matches('/'))
+                    };
+                    //Resolve indirection if any present
+                    let src = match http_client.head(&src).call() {
+                        Ok(resp) => match resp.status() {
+                            300..=399 => match resp.header("location") {
+                                Some(header) => header.to_string(),
+                                None => src,
+                            }
+                            _ => src,
+                        }
+                        Err(_) => src
+                    };
                     let alt = img.get("alt").unwrap_or("");
                     dest.write_fmt(format_args!("![{alt}]({src})"))?;
                 }
