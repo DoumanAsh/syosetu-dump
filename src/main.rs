@@ -10,6 +10,15 @@ mod data;
 fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
     let mut buffer = String::new();
     let stdin = io::stdin();
+    let mut stdout = io::stdout();
+
+    macro_rules! prompt {
+        ($($arg:tt)*) => {
+            let _ = io::Write::write_fmt(&mut stdout, format_args!($($arg)*));
+            let _ = io::Write::flush(&mut stdout);
+        }
+    }
+
     macro_rules! read_line {
         () => {
             buffer.clear();
@@ -22,7 +31,7 @@ fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
 
     let novel: cli::Id;
     loop {
-        println!(">Please input novel id (e.g. n9185fm): ");
+        prompt!(">Please input novel id (e.g. n9185fm): ");
         read_line!();
 
         let line = buffer.trim();
@@ -42,27 +51,25 @@ fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
         }
     }
 
-    println!(">Is novel 18+?: y/N");
+    prompt!(">Is novel 18+?(y/N):");
     read_line!();
 
     let line = buffer.trim();
     let r18 = if line.is_empty() {
-        println!("NO");
         false
     } else {
         line.eq_ignore_ascii_case("y") || line.eq_ignore_ascii_case("yes")
     };
 
     let from;
-    println!(">Please specify which chapters to download:");
+    prompt!(">Please specify which chapters to download:\n");
     loop {
-        println!("Start FROM chapter(defaults to 1)?:");
+        prompt!("Start FROM chapter(defaults to 1)?:");
         read_line!();
 
         let line = buffer.trim();
         if line.is_empty() {
             from = cli::default_from_value();
-            println!("{from}");
             break;
         }
 
@@ -86,7 +93,7 @@ fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
 
     let to;
     loop {
-        println!("TO chapter(leave empty for all)?:");
+        prompt!("TO chapter(leave empty for all)?:");
         read_line!();
 
         let line = buffer.trim();
@@ -112,7 +119,6 @@ fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
         }
     }
 
-    println!("############");
     Ok(cli::Cli {
         from,
         r18,
@@ -129,12 +135,7 @@ fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
                    .call()
 }
 
-fn main() -> ExitCode {
-    let args = match cli::Cli::new().unwrap_or_else(args_from_stdin) {
-        Ok(args) => args,
-        Err(code) => return code,
-    };
-
+fn run(args: cli::Cli) -> ExitCode {
     let api_endpoint = match args.r18 {
         true => "novel18api",
         false => "novelapi",
@@ -183,7 +184,7 @@ fn main() -> ExitCode {
         },
     };
 
-    println!("Novel: ");
+    println!("## Novel: ");
     println!("Title={}", info.title);
     println!("Code={}", info.ncode);
     println!("Author={}", info.writer);
@@ -268,8 +269,31 @@ fn main() -> ExitCode {
     }
 
     let _ = io::Write::flush(&mut file);
-
     ExitCode::SUCCESS
+}
+
+fn main() -> ExitCode {
+    let (is_stdin, args) = match cli::Cli::new() {
+        Some(Ok(args)) => (false, args),
+        Some(Err(code)) => return code,
+        None => match args_from_stdin() {
+            Ok(args) => (true, args),
+            Err(code) => return code,
+        }
+    };
+
+    let code = run(args);
+    if is_stdin {
+        let mut stdout = io::stdout();
+        let _ = io::Write::write_all(&mut stdout, b"## Press ENTER to finish...");
+        let _ = io::Write::flush(&mut stdout);
+        let stdin = io::stdin();
+        let mut buffer = String::new();
+        let _ = stdin.read_line(&mut buffer);
+        let _ = io::Write::write_all(&mut stdout, buffer.as_bytes());
+        let _ = io::Write::flush(&mut stdout);
+    }
+    code
 }
 
 fn construct_file_path(dir: &str, name: &str) -> path::PathBuf {
