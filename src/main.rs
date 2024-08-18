@@ -1,10 +1,125 @@
-#![no_main]
 #![allow(clippy::result_large_err)]
 
 use std::{io, fs, path};
+use std::process::ExitCode;
+use core::num::NonZeroUsize;
 
 mod cli;
 mod data;
+
+fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
+    let mut buffer = String::new();
+    let stdin = io::stdin();
+    macro_rules! read_line {
+        () => {
+            buffer.clear();
+            if let Err(error) = stdin.read_line(&mut buffer) {
+                eprintln!("!>>>Unexpected I/O error: {error}");
+                return Err(ExitCode::FAILURE);
+            }
+        };
+    }
+
+    let novel: cli::Id;
+    loop {
+        println!(">Please input novel id (e.g. n9185fm): ");
+        read_line!();
+
+        let line = buffer.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        match line.parse() {
+            Ok(new_id) => {
+                novel = new_id;
+                break;
+            },
+            Err(error) => {
+                eprintln!("!>>>{error}");
+                continue;
+            }
+        }
+    }
+
+    println!(">Is novel 18+?: y/N");
+    read_line!();
+
+    let line = buffer.trim();
+    let r18 = if line.is_empty() {
+        println!("NO");
+        false
+    } else {
+        line.eq_ignore_ascii_case("y") || line.eq_ignore_ascii_case("yes")
+    };
+
+    let from;
+    println!(">Please specify which chapters to download:");
+    loop {
+        println!("Start FROM chapter(defaults to 1)?:");
+        read_line!();
+
+        let line = buffer.trim();
+        if line.is_empty() {
+            from = cli::default_from_value();
+            println!("{from}");
+            break;
+        }
+
+        match usize::from_str_radix(&line, 10) {
+            Ok(chapter) => match NonZeroUsize::new(chapter) {
+                Some(chapter) => {
+                    from = chapter;
+                    break;
+                },
+                None => {
+                    eprintln!("!>>>Chapter cannot be zero");
+                    continue
+                }
+            },
+            Err(error) => {
+                eprintln!("!>>>'{line}': {error}");
+                continue;
+            }
+        }
+    }
+
+    let to;
+    loop {
+        println!("TO chapter(leave empty for all)?:");
+        read_line!();
+
+        let line = buffer.trim();
+        if line.is_empty() {
+            to = None;
+            break;
+        }
+
+        match usize::from_str_radix(&line, 10) {
+            Ok(chapter) => if chapter > from.get() {
+                to = Some(unsafe {
+                    NonZeroUsize::new_unchecked(chapter)
+                });
+                break;
+            } else {
+                eprintln!("!>>>Number has to be greater than from='{from}'");
+                continue
+            },
+            Err(error) => {
+                eprintln!("!>>>{error}");
+                continue;
+            }
+        }
+    }
+
+    println!("############");
+    Ok(cli::Cli {
+        from,
+        r18,
+        to,
+        novel
+    })
+}
 
 #[inline(always)]
 fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
@@ -14,9 +129,8 @@ fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
                    .call()
 }
 
-#[no_mangle]
-fn rust_main(args: c_main::Args) -> bool {
-    let args = match cli::Cli::new(args.into_iter().skip(1)) {
+fn main() -> ExitCode {
+    let args = match cli::Cli::new().unwrap_or_else(args_from_stdin) {
         Ok(args) => args,
         Err(code) => return code,
     };
@@ -29,29 +143,44 @@ fn rust_main(args: c_main::Args) -> bool {
     let resp = match get(&format!("https://api.syosetu.com/{api_endpoint}/api/?out=json&ncode={}", args.novel.0)) {
         Ok(resp) => if resp.status() != 200 {
             eprintln!("Request to api.syosetu.com failed with code: {}", resp.status());
-            return false;
+            return ExitCode::FAILURE;
         } else {
             resp
         },
         Err(ureq::Error::Status(code, _)) => {
             eprintln!("Request to api.syosetu.com failed with code: {}", code);
-            return false;
+            return ExitCode::FAILURE;
         },
         Err(ureq::Error::Transport(_)) => {
             eprintln!("api.syosetu.com is unreachable");
-            return false
+            return ExitCode::FAILURE;
         },
     };
 
-    let (_, info) = match resp.into_json::<data::NovelInfo>() {
-        Ok(mut info) => {
-            info.1.ncode.make_ascii_lowercase();
-            info
-        }
+    let response = match resp.into_string() {
+        Ok(response) => response,
         Err(error) => {
             eprintln!("Failed to get novel '{}' info. Error: {}", args.novel.0, error);
-            return false
+            return ExitCode::FAILURE;
         }
+    };
+
+    let info = match serde_json::from_str::<Vec<data::NovelInfo>>(&response) {
+        Ok(mut info) => match info.pop() {
+            Some(data::NovelInfo::Info(mut info)) => {
+                info.ncode.make_ascii_lowercase();
+                info
+            },
+            _ => {
+                eprintln!("Novel '{}' is not found", args.novel.0);
+                return ExitCode::FAILURE;
+            }
+        },
+        Err(error) => {
+            eprintln!("Failed to get novel '{}' info. Invalid JSON: {}", args.novel.0, error);
+            eprintln!("JSON:\n{response}");
+            return ExitCode::FAILURE;
+        },
     };
 
     println!("Novel: ");
@@ -63,7 +192,7 @@ fn rust_main(args: c_main::Args) -> bool {
 
     if args.from.get() > info.chapter_count {
         eprintln!("From is '{}' but novel has only {} chapters", args.from, info.chapter_count);
-        return false;
+        return ExitCode::FAILURE;
     }
 
     let to = if let Some(to) = args.to {
@@ -72,7 +201,7 @@ fn rust_main(args: c_main::Args) -> bool {
         eprintln!("To is '{}' but novel has only {} chapters", args.from, info.chapter_count);
         } else if args.from.get() > to {
             eprintln!("From '{}' is above To '{}, which is retarded", args.from, to);
-            return false;
+            return ExitCode::FAILURE;
         }
 
         to
@@ -84,20 +213,24 @@ fn rust_main(args: c_main::Args) -> bool {
         Ok(file) => io::BufWriter::new(file),
         Err(error) => {
             eprintln!("Failed to create file to store content. Error: {}", error);
-            return false;
+            return ExitCode::FAILURE;
         },
     };
 
-    if let Err(error) = io::Write::write_fmt(&mut file, format_args!("# {}\n\nOriginal: https://ncode.syosetu.com/{}\n\n", info.title, info.ncode)) {
+    let host_prefix = match args.r18 {
+        true => "novel18",
+        false => "ncode",
+    };
+    if let Err(error) = io::Write::write_fmt(&mut file, format_args!("# {}\n\nOriginal: https://{host_prefix}.syosetu.com/{}\n\n", info.title, info.ncode)) {
         eprintln!("Unable to write file: {}", error);
-        return false;
+        return ExitCode::FAILURE;
     }
 
     let http_client = ureq::AgentBuilder::new().redirects(0).build();
     for idx in args.from.get()..=to {
         print!("Downloading chapter {} ({}/{})...", idx, info.ncode, idx);
         let text = loop {
-            let resp = match get(&format!("https://ncode.syosetu.com/{}/{}", info.ncode, idx)) {
+            let resp = match get(&format!("https://{host_prefix}.syosetu.com/{}/{}", info.ncode, idx)) {
                 Ok(resp) => if resp.status() != 200 {
                     println!("ERR");
                     eprintln!("Request to ncode.syosetu.com failed with code: {}", resp.status());
@@ -107,7 +240,7 @@ fn rust_main(args: c_main::Args) -> bool {
                 },
                 Err(ureq::Error::Status(code, _)) => {
                     println!("ERR");
-                    eprintln!("Request to ncode.syosetu.com failed with code: {}", code);
+                    eprintln!("Request to {host_prefix}.syosetu.com failed with code: {code}");
                     continue
                 },
                 Err(ureq::Error::Transport(_)) => {
@@ -128,7 +261,7 @@ fn rust_main(args: c_main::Args) -> bool {
         if let Err(error) = dump(&mut file, &text, &http_client) {
             println!("ERR");
             eprintln!("Failed to store novel. Error: {}", error);
-            return false;
+            return ExitCode::FAILURE;
         }
 
         println!("OK");
@@ -136,7 +269,7 @@ fn rust_main(args: c_main::Args) -> bool {
 
     let _ = io::Write::flush(&mut file);
 
-    true
+    ExitCode::SUCCESS
 }
 
 fn construct_file_path(dir: &str, name: &str) -> path::PathBuf {

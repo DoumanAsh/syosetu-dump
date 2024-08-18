@@ -1,4 +1,4 @@
-use serde::{Deserialize};
+use serde::Deserialize;
 
 pub type IdBuf = str_buf::StrBuf<10>;
 
@@ -20,4 +20,10 @@ pub struct Info {
     pub updated_at: str_buf::StrBuf<19>,
 }
 
-pub type NovelInfo = (Meta, Info);
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+#[allow(dead_code)]
+pub enum NovelInfo {
+    Meta(Meta),
+    Info(Info)
+}

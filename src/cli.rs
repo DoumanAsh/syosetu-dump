@@ -2,6 +2,13 @@ use arg::Args;
 
 use core::fmt;
 use core::num::NonZeroUsize;
+use std::process::ExitCode;
+
+pub fn default_from_value() -> NonZeroUsize {
+    unsafe {
+        core::num::NonZeroUsize::new_unchecked(1)
+    }
+}
 
 use crate::data::IdBuf;
 #[derive(Debug)]
@@ -34,7 +41,7 @@ impl core::str::FromStr for Id {
 #[derive(Args, Debug)]
 ///Utility to download text of the syosetu novels
 pub struct Cli {
-    #[arg(long, default_value = "unsafe { core::num::NonZeroUsize::new_unchecked(1) }")]
+    #[arg(long, default_value = "default_from_value()")]
     ///Specify from which chapter to start dumping. Default: 1.
     pub from: NonZeroUsize,
     #[arg(long)]
@@ -50,18 +57,27 @@ pub struct Cli {
 
 impl Cli {
     #[inline]
-    pub fn new<'a, T: IntoIterator<Item = &'a str>>(args: T) -> Result<Self, bool> {
-        let args = args.into_iter();
+    pub fn new() -> Option<Result<Self, ExitCode>> {
+        let args: std::vec::Vec<_> = std::env::args().skip(1).collect();
 
-        Cli::from_args(args).map_err(|err| match err.is_help() {
-            true => {
-                println!("{}", Cli::HELP);
-                false
+        if args.is_empty() {
+            return None;
+        }
+
+        match Self::from_args(args.iter().map(std::string::String::as_str)) {
+            Ok(args) => Some(Ok(args)),
+            Err(arg::ParseKind::Sub(name, arg::ParseError::HelpRequested(help))) => {
+                std::println!("{name}: {}", help);
+                Some(Err(ExitCode::SUCCESS))
             },
-            false => {
-                eprintln!("{}", err);
-                true
+            Err(arg::ParseKind::Top(arg::ParseError::HelpRequested(help))) => {
+                std::println!("{}", help);
+                Some(Err(ExitCode::SUCCESS))
             },
-        })
+            Err(error) => {
+                std::eprintln!("{}", error);
+                Some(Err(ExitCode::FAILURE))
+            }
+        }
     }
 }
