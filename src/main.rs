@@ -308,20 +308,20 @@ fn dump<W: io::Write>(dest: &mut W, html: &str, http_client: &ureq::Agent) -> io
     use kuchiki::traits::TendrilSink;
 
     const WHITE_SPACE: &[char] = &[' ', '\t', '\n', '　'];
-    const NOVEL_BODY: &str = "#novel_honbun";
-    const NOVEL_TITLE: &str = ".novel_subtitle";
+    const NOVEL_BODY: &str = ".p-novel__text";
+    const NOVEL_TITLE: &str = ".p-novel__title";
 
     let document = kuchiki::parse_html().from_utf8().one(html.as_bytes());
 
     let novel_title = match document.select_first(NOVEL_TITLE) {
         Ok(node) => node,
-        Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "Unable to find #novel_honbun block")),
+        Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "Unable to find .p-novel__title block")),
     };
     let novel_title = novel_title.as_node();
 
     let novel_text = match document.select_first(NOVEL_BODY) {
         Ok(node) => node,
-        Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "Unable to find .novel_view block")),
+        Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "Unable to find .p-novel__text block")),
     };
     let novel_text = novel_text.as_node();
 
