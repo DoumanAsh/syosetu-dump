@@ -1,4 +1,4 @@
-#![allow(clippy::result_large_err)]
+#![allow(clippy::style, clippy::result_large_err)]
 
 use std::{io, fs, path};
 use std::process::ExitCode;
@@ -102,7 +102,7 @@ fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
             break;
         }
 
-        match usize::from_str_radix(&line, 10) {
+        match usize::from_str_radix(line, 10) {
             Ok(chapter) => if chapter > from.get() {
                 to = Some(unsafe {
                     NonZeroUsize::new_unchecked(chapter)
@@ -123,7 +123,8 @@ fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
         from,
         r18,
         to,
-        novel
+        novel,
+        title: None,
     })
 }
 
@@ -196,6 +197,10 @@ fn run(args: cli::Cli) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    let title = match args.title {
+        Some(title) => title,
+        None => info.title,
+    };
     let to = if let Some(to) = args.to {
         let to = to.get();
         if to > info.chapter_count {
@@ -210,7 +215,7 @@ fn run(args: cli::Cli) -> ExitCode {
         info.chapter_count
     };
 
-    let mut file = match fs::File::create(construct_file_path(".", &info.title)) {
+    let mut file = match fs::File::create(construct_file_path(".", &title)) {
         Ok(file) => io::BufWriter::new(file),
         Err(error) => {
             eprintln!("Failed to create file to store content. Error: {}", error);
@@ -222,7 +227,7 @@ fn run(args: cli::Cli) -> ExitCode {
         true => "novel18",
         false => "ncode",
     };
-    if let Err(error) = io::Write::write_fmt(&mut file, format_args!("# {}\n\nOriginal: https://{host_prefix}.syosetu.com/{}\n\n", info.title, info.ncode)) {
+    if let Err(error) = io::Write::write_fmt(&mut file, format_args!("# {}\n\nOriginal: https://{host_prefix}.syosetu.com/{}\n\n", title, info.ncode)) {
         eprintln!("Unable to write file: {}", error);
         return ExitCode::FAILURE;
     }
@@ -315,13 +320,13 @@ fn dump<W: io::Write>(dest: &mut W, html: &str, http_client: &ureq::Agent) -> io
 
     let novel_title = match document.select_first(NOVEL_TITLE) {
         Ok(node) => node,
-        Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "Unable to find .p-novel__title block")),
+        Err(_) => return Err(io::Error::other("Unable to find .p-novel__title block")),
     };
     let novel_title = novel_title.as_node();
 
     let novel_text = match document.select_first(NOVEL_BODY) {
         Ok(node) => node,
-        Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "Unable to find .p-novel__text block")),
+        Err(_) => return Err(io::Error::other("Unable to find .p-novel__text block")),
     };
     let novel_text = novel_text.as_node();
 

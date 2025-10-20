@@ -53,6 +53,9 @@ pub struct Cli {
     #[arg(required)]
     ///Id of the novel to dump (e.g. n9185fm)
     pub novel: Id,
+    #[arg(long)]
+    ///Title override
+    pub title: Option<String>
 }
 
 impl Cli {
