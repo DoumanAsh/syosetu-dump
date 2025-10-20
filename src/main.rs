@@ -3,9 +3,12 @@
 use std::{io, fs, path};
 use std::process::ExitCode;
 use core::num::NonZeroUsize;
+use core::time;
 
 mod cli;
 mod data;
+
+const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
     let mut buffer = String::new();
@@ -128,38 +131,40 @@ fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
     })
 }
 
-#[inline(always)]
-fn get(path: &str) -> Result<ureq::Response, ureq::Error> {
-    //over18=yes;
-    ureq::get(path).timeout(core::time::Duration::from_secs(5))
-                   .set("Cookie", "over18=yes")
-                   .call()
-}
-
 fn run(args: cli::Cli) -> ExitCode {
+    let config = ureq::Agent::config_builder().user_agent(USER_AGENT)
+                                              .proxy(ureq::Proxy::try_from_env())
+                                              .max_redirects(0)
+                                              .timeout_per_call(Some(time::Duration::from_secs(5)))
+                                              .timeout_connect(Some(time::Duration::from_secs(1)))
+                                              .build();
+    let http_client = ureq::Agent::new_with_config(config);
+
     let api_endpoint = match args.r18 {
         true => "novel18api",
         false => "novelapi",
     };
 
-    let resp = match get(&format!("https://api.syosetu.com/{api_endpoint}/api/?out=json&ncode={}", args.novel.0)) {
-        Ok(resp) => if resp.status() != 200 {
+    let resp = http_client.get(&format!("https://api.syosetu.com/{api_endpoint}/api/?out=json&ncode={}", args.novel.0)).header("Cookie", "over18=yes").call();
+
+    let mut resp = match resp {
+        Ok(resp) => if resp.status().as_u16() != 200 {
             eprintln!("Request to api.syosetu.com failed with code: {}", resp.status());
             return ExitCode::FAILURE;
         } else {
             resp
         },
-        Err(ureq::Error::Status(code, _)) => {
+        Err(ureq::Error::StatusCode(code)) => {
             eprintln!("Request to api.syosetu.com failed with code: {}", code);
             return ExitCode::FAILURE;
         },
-        Err(ureq::Error::Transport(_)) => {
-            eprintln!("api.syosetu.com is unreachable");
+        Err(error) => {
+            eprintln!("api.syosetu.com is unreachable: {error}");
             return ExitCode::FAILURE;
         },
     };
 
-    let response = match resp.into_string() {
+    let response = match resp.body_mut().read_to_string() {
         Ok(response) => response,
         Err(error) => {
             eprintln!("Failed to get novel '{}' info. Error: {}", args.novel.0, error);
@@ -231,31 +236,32 @@ fn run(args: cli::Cli) -> ExitCode {
         eprintln!("Unable to write file: {}", error);
         return ExitCode::FAILURE;
     }
-
-    let http_client = ureq::AgentBuilder::new().redirects(0).build();
     for idx in args.from.get()..=to {
         print!("Downloading chapter {} ({}/{})...", idx, info.ncode, idx);
         let text = loop {
-            let resp = match get(&format!("https://{host_prefix}.syosetu.com/{}/{}", info.ncode, idx)) {
-                Ok(resp) => if resp.status() != 200 {
+
+            let resp = http_client.get(&format!("https://{host_prefix}.syosetu.com/{}/{}", info.ncode, idx)).header("Cookie", "over18=yes").call();
+            let mut resp = match resp {
+                Ok(resp) => if resp.status().as_u16() != 200 {
                     println!("ERR");
                     eprintln!("Request to ncode.syosetu.com failed with code: {}", resp.status());
                     continue
                 } else {
                     resp
                 },
-                Err(ureq::Error::Status(code, _)) => {
+                Err(ureq::Error::StatusCode(code)) => {
                     println!("ERR");
                     eprintln!("Request to {host_prefix}.syosetu.com failed with code: {code}");
                     continue
                 },
-                Err(ureq::Error::Transport(_)) => {
-                    eprintln!("ncode.syosetu.com is unreachable");
+                Err(error) => {
+                    eprintln!("ncode.syosetu.com is unreachable: {error}");
+                    std::thread::sleep(time::Duration::from_secs(1));
                     continue
                 },
             };
 
-            match resp.into_string() {
+            match resp.body_mut().read_to_string() {
                 Ok(text) => break text,
                 Err(error) => {
                     println!("ERR");
@@ -350,8 +356,8 @@ fn dump<W: io::Write>(dest: &mut W, html: &str, http_client: &ureq::Agent) -> io
                     };
                     //Resolve indirection if any present
                     let src = match http_client.head(&src).call() {
-                        Ok(resp) => match resp.status() {
-                            300..=399 => match resp.header("location") {
+                        Ok(resp) => match resp.status().as_u16() {
+                            300..=399 => match resp.headers().get("location").and_then(|header| header.to_str().ok()) {
                                 Some(header) => header.to_string(),
                                 None => src,
                             }
