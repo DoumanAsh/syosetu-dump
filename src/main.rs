@@ -330,43 +330,49 @@ fn dump<W: io::Write>(dest: &mut W, html: &str, http_client: &ureq::Agent) -> io
     };
     let novel_title = novel_title.as_node();
 
-    let novel_text = match document.select_first(NOVEL_BODY) {
+    let novel_text_iter = match document.select(NOVEL_BODY) {
         Ok(node) => node,
         Err(_) => return Err(io::Error::other("Unable to find .p-novel__text block")),
     };
-    let novel_text = novel_text.as_node();
 
     dest.write_fmt(format_args!("## {}\n", novel_title.text_contents()))?;
 
-    for child in novel_text.children() {
-        if let Some(element) = child.into_element_ref() {
-            let text = element.text_contents();
-            let text = text.trim_matches(WHITE_SPACE);
-            dest.write_all(b"\n")?;
+    for (idx, novel_text) in novel_text_iter.enumerate() {
+        if idx > 0 {
+            dest.write_all(b"\n<div class=\"ch_div\">-------</div>\n")?;
+        }
 
-            if !text.is_empty() {
-                dest.write_all(text.as_bytes())?;
-            } else if let Ok(img) = element.as_node().select_first("img") {
-                let img = img.attributes.borrow();
-                if let Some(src) = img.get("src") {
-                    let src = if src.starts_with("http") {
-                        src.to_owned()
-                    } else {
-                        format!("https://{}", src.trim_start_matches('/'))
-                    };
-                    //Resolve indirection if any present
-                    let src = match http_client.head(&src).call() {
-                        Ok(resp) => match resp.status().as_u16() {
-                            300..=399 => match resp.headers().get("location").and_then(|header| header.to_str().ok()) {
-                                Some(header) => header.to_string(),
-                                None => src,
+        let novel_text = novel_text.as_node();
+        for child in novel_text.children() {
+            if let Some(element) = child.into_element_ref() {
+                let text = element.text_contents();
+                let text = text.trim_matches(WHITE_SPACE);
+                dest.write_all(b"\n")?;
+
+                if !text.is_empty() {
+                    dest.write_all(text.as_bytes())?;
+                } else if let Ok(img) = element.as_node().select_first("img") {
+                    let img = img.attributes.borrow();
+                    if let Some(src) = img.get("src") {
+                        let src = if src.starts_with("http") {
+                            src.to_owned()
+                        } else {
+                            format!("https://{}", src.trim_start_matches('/'))
+                        };
+                        //Resolve indirection if any present
+                        let src = match http_client.head(&src).call() {
+                            Ok(resp) => match resp.status().as_u16() {
+                                300..=399 => match resp.headers().get("location").and_then(|header| header.to_str().ok()) {
+                                    Some(header) => header.to_string(),
+                                    None => src,
+                                }
+                                _ => src,
                             }
-                            _ => src,
-                        }
-                        Err(_) => src
-                    };
-                    let alt = img.get("alt").unwrap_or("");
-                    dest.write_fmt(format_args!("![{alt}]({src})"))?;
+                            Err(_) => src
+                        };
+                        let alt = img.get("alt").unwrap_or("");
+                        dest.write_fmt(format_args!("![{alt}]({src})"))?;
+                    }
                 }
             }
         }

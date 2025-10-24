@@ -1,6 +1,6 @@
 [package]
 name = "syosetu-dump"
-version = "1.4.0"
+version = "1.4.1"
 authors = ["Douman <douman@gmx.se>"]
 description = "syosetu dump tool"
 license = "BSL-1.0"
