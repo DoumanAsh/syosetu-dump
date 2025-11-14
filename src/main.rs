@@ -5,10 +5,12 @@ use std::process::ExitCode;
 use core::num::NonZeroUsize;
 use core::time;
 
+use env_smart::env;
+
 mod cli;
 mod data;
 
-const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = env!("{CARGO_PKG_NAME}/{CARGO_PKG_VERSION}");
 
 fn args_from_stdin() -> Result<cli::Cli, ExitCode> {
     let mut buffer = String::new();
