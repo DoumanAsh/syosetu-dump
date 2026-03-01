@@ -30,3 +30,7 @@ I recommend to use [pandoc](https://github.com/jgm/pandoc):
 ```
 pandoc --embed-resources --standalone --metadata title="TITLE" -o TITLE.epub TITLE.md
 ```
+
+## Unified CLI
+
+This CLI was merged into my unified tool [shousetsu-dump](https://github.com/DoumanAsh/shousetsu-dump) with support for multiple sources to download novels from
